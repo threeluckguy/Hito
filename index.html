@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reader 링크 생성기</title>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#3b82f6; --ok:#10b981; --danger:#ef4444; }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans KR,Apple SD Gothic Neo,sans-serif; background:var(--bg); color:var(--text); display:grid; place-items:center; min-height:100vh; padding:24px}
+    .wrap{width:min(720px,100%); background:var(--card); border:1px solid #1f2937; border-radius:16px; padding:20px 18px; box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    h1{font-size:20px; margin:0 0 8px}
+    p{margin:0 0 16px; color:var(--muted); font-size:14px}
+    .row{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+    input[type="text"]{flex:1 1 260px; min-width:200px; padding:12px 14px; border-radius:12px; border:1px solid #334155; background:#0b1220; color:var(--text); font-size:16px; outline:none}
+    input::placeholder{color:#6b7280}
+    .btn{padding:12px 14px; border-radius:12px; border:1px solid #1f2937; background:#0b5ff7; color:white; font-weight:700; cursor:pointer}
+    .btn:disabled{opacity:.6; cursor:not-allowed}
+    .btn.copy{background:#6b7280}
+    .preview{margin-top:14px; padding:12px; border-radius:12px; border:1px dashed #334155; background:#0b1220; font-family:ui-monospace,Consolas,Monaco,monospace; overflow:auto; white-space:nowrap}
+    .msg{margin-top:8px; font-weight:600}
+    .msg.error{color:var(--danger)}
+    .msg.ok{color:var(--ok)}
+    a.link{color:#93c5fd; text-decoration:underline; word-break:break-all}
+    footer{margin-top:14px; color:#9ca3af; font-size:12px}
+  </style>
+</head>
+<body>
+  <main class="wrap" role="main" aria-labelledby="title">
+    <h1 id="title">Reader 링크 생성기</h1>
+    <p>숫자를 입력하면 <code>https://hitomi.la/reader/().html#1</code>의 <code>()</code>가 숫자로 바뀐 하이퍼링크가 생성됩니다.</p>
+
+    <section class="row" aria-label="입력과 동작">
+      <input id="number" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="예: 123456" aria-label="숫자 입력" autofocus />
+      <button id="open" type="button" class="btn" disabled>바로 접속</button>
+      <button id="copy" type="button" class="btn copy" disabled>링크 복사</button>
+    </section>
+    <div id="msg" class="msg" role="status" aria-live="polite"></div>
+
+    <div class="preview" aria-label="미리보기">
+      <div>미리보기: <a id="link" class="link" href="#" target="_blank" rel="noopener">https://hitomi.la/reader/().html#1</a></div>
+    </div>
+
+    <footer>Enter 키를 눌러도 새 탭에서 열립니다.</footer>
+  </main>
+
+  <script>
+    const input = document.getElementById('number');
+    const link = document.getElementById('link');
+    const openBtn = document.getElementById('open');
+    const copyBtn = document.getElementById('copy');
+    const msg = document.getElementById('msg');
+
+    const BASE_PREFIX = 'https://hitomi.la/reader/';
+    const BASE_SUFFIX = '.html#1';
+    const LAST_KEY = 'reader_number_last';
+
+    function normalizeToAsciiDigits(str){
+      // 1) NFKC 정규화로 전각 숫자 등 ASCII로 변환
+      try { str = str.normalize('NFKC'); } catch(e) {}
+      // 2) 숫자 외 제거
+      return (str || '').replace(/\D+/g, '');
+    }
+
+    function setState(ok, text='', okTone=false){
+      openBtn.disabled = !ok;
+      copyBtn.disabled = !ok;
+      msg.textContent = text;
+      msg.className = 'msg' + (okTone ? ' ok' : (ok ? '' : ' error'));
+    }
+
+    function buildUrl(){
+      let raw = (input.value || '').trim();
+      let digits = normalizeToAsciiDigits(raw);
+      if (!digits){
+        setState(false, '숫자를 입력하세요.');
+        return null;
+      }
+      // 입력창에도 정규화된 값 반영 (사용자 체감 개선)
+      if (digits !== raw){
+        input.value = digits;
+        updatePreview(); // 버튼 상태/링크 갱신
+      }
+      const url = BASE_PREFIX + digits + BASE_SUFFIX;
+      localStorage.setItem(LAST_KEY, digits);
+      return url;
+    }
+
+    function updatePreview(){
+      const v = normalizeToAsciiDigits(input.value);
+      if (v){
+        const u = BASE_PREFIX + v + BASE_SUFFIX;
+        link.textContent = u;
+        link.href = u;
+        setState(true, '', false);
+      } else {
+        link.textContent = BASE_PREFIX + '()' + BASE_SUFFIX;
+        link.removeAttribute('href');
+        setState(false, '');
+      }
+    }
+
+    input.addEventListener('input', () => {
+      // 즉시 정규화 반영
+      const norm = normalizeToAsciiDigits(input.value);
+      if (norm !== input.value) input.value = norm;
+      updatePreview();
+    });
+
+    // Enter -> 새 탭
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        const u = buildUrl();
+        if (u) window.open(u, '_blank', 'noopener,noreferrer');
+      }
+    });
+
+    openBtn.addEventListener('click', () => {
+      const u = buildUrl();
+      if (u) window.open(u, '_blank', 'noopener,noreferrer');
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      const u = buildUrl();
+      if (!u) return;
+      try {
+        await navigator.clipboard.writeText(u);
+        setState(true, '링크가 복사되었습니다.', true);
+        setTimeout(() => setState(true, ''), 1000);
+      } catch {
+        // Fallback (비권장이지만 호환용)
+        const ta = document.createElement('textarea');
+        ta.value = u; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); ta.remove();
+        setState(true, '링크가 복사되었습니다.', true);
+        setTimeout(() => setState(true, ''), 1000);
+      }
+    });
+
+    // 초기: 저장된 값 복원
+    const last = localStorage.getItem(LAST_KEY);
+    if (last) input.value = last;
+    updatePreview();
+  </script>
+</body>
+</html>
